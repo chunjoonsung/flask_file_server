@@ -1,0 +1,42 @@
+{% extends "index.html" %}
+
+{% block content %}
+	<div style="float: right">
+		{% autoescape false %} [ {{session['username']}} ] {% endautoescape %}
+		[ <a href="/logout"> logout </a> ]
+	</div>
+	<div style="margin-right:50px" width="600">
+	<h3>File List</h3>
+	<div style="margin-left:25px"> <h4> {% block title %}  {{folder}}{% endblock %} </h4></div>
+	<table border='1' class="table table-striped table-responsive" style="margin: 25px 25px 25px 25px;"> <!-- border='1'  -->
+		<thead><tr>
+		{% autoescape false %}
+			<th style="text-align: center;"> <a href="/download?path={{folder}}&sort_by=name&sort_order={{sort_order}}">Filename</a> </th> 
+			<th width="1%" style="text-align: center;"> <a href="/download?path={{folder}}&sort_by=size&sort_order={{sort_order}}">Size</a> </th> 
+			<th width="200px" style="text-align: center;"> <a href="/download?path={{folder}}&sort_by=date&sort_order={{sort_order}}">Date</a> </th>
+		{% endautoescape %}
+		</tr></thead><tbody>
+	{% if dirs %}
+		{% for dirName in dirs %}
+			<tr>
+			<!--td onclick="window.location='{{folder}}{{dirName[0]}}';" style='cursor: pointer;'-->
+			<td><img src="/image/folder.png" width=16 height=16 />&nbsp;<a href="/download?path={{folder}}{{dirName[0]}}">[ {{ dirName[0] }} ]</a></td> 
+			<td style="text-align: right;"> {{ dirName[1] }} </td>
+			<td style="text-align: center;"> {{ dirName[2] }} </td>
+			</tr>
+		{% endfor %}
+	{% endif %}
+	{% if files %}
+		{% for fileName in files %}
+			<tr>
+			<!--td onclick="window.location='{{folder}}{{fileName[0]}}';" style='cursor: pointer;'-->
+			<td><img src="/image/file.png" width=16 height=16 />&nbsp;<a href="/download?path={{folder}}{{fileName[0]}}"> {{ fileName[0] }}</td> 
+			<td style="text-align: right;">{{ fileName[1] }} </a></td>
+			<td style="text-align: center;"> {{ fileName[2] }} </td>
+			</tr>
+		{% endfor %}
+	{% endif %}
+	</tbody></table>
+	</div>
+	<p />
+{% endblock %}

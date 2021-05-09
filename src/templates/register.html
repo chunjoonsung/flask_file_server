@@ -1,0 +1,19 @@
+{% extends "index.html" %}
+
+{% block content %}
+{% if not session['logged_in'] %}
+<script>window.location.href = "/login"</script>
+{% else %}
+<center>
+<div style="float: right"><a href="/logout"> Logout </a></div>
+<h3>Register</h3>
+<form action="/register" method="POST">
+  <input type="username" name="username" placeholder="Username">
+  <input type="password" name="password" placeholder="Password">
+  <input type="checkbox" name="admin" value="admin">
+  <input type="submit" value="Register">
+</form>
+<div><font color="red"> {{message}} </font></div>
+</center>
+{% endif %}
+{% endblock %}
