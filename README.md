@@ -1,6 +1,8 @@
 # flask_file_server
 Web file server using Flask + JInja2
 
+![screenshot](screenshot.png)
+
 # Feature
 * Login to user mode and admin mode
 * File Browser
