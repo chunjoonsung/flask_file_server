@@ -1,212 +1,244 @@
 from flask import Flask, render_template
-from flask_bootstrap import Bootstrap
-from flask_nav import Nav
-from flask_nav.elements import *
-from dominate.tags import img, span
-
 from flask import send_file, url_for, request, redirect, session
-from flask_sqlalchemy import SQLAlchemy
 
-import time
 import os
 import sys
-from datetime import timedelta
+import time
 
-ALLOWED_EXTENSIONS = set(['txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'])
-MIME_TYPE = { 'txt' : 'text/plane', 
-              'pdf' : 'application/pdf', 
-              'png' : 'image/png', 
-              'jpg' : 'image/jpg', 
-              'jpeg': 'image/jpg', 
-              'gif' : 'image/gif',
-            }
+import login as sql
 
-if sys.platform == 'linux': home_dir = r"/home/pi/www"
-else: home_dir = r"D:\Temp"
+base_dir = ""
+home_dir = ""
+page_show_num = 10
+page_show_item = 25
 
-#
-# Menu
-#
-
-logo = img(src='./static/img/logo.png', height="32", width="32", style="margin-top:-4px")
-title = span(logo," Simple File Server")
-topbar = Navbar( 
-    View( title, 'home'),
-    View('Download', 'home'),
-    Subgroup('Admin',
-        View('Register', 'register'),
-        View('User', 'user'),
-    ),
-    Subgroup( "Help", 
-        View('Pagination', 'pagination'),
-        View('About', 'about'),
-    )
-)
-
-nav = Nav()
-nav.register_element('top', topbar)
+if sys.platform == 'linux': base_dir = r"/home/pi/www2"
+else: base_dir = r"D:\Temp"
 
 app = Flask(__name__)
-db = SQLAlchemy(app)
-Bootstrap(app)
 
-@app.route('/about', methods=["GET"])
-def about():
-    return(render_template('about.html'))
+def prepare_request_process():
+    global home_dir
+    if session.get('logged_in'): home_dir = base_dir
+    else: home_dir = os.path.join( base_dir, "pub" )
 
-#
-# File List
-#
+def strip_root(path):
+    if len(path) == 0: return ""
+    else: return path[1:] if path[0] == '/' else path
 
-        
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
-
-def get_mime_type(filename):
-    if '.' in filename:
-        return MIME_TYPE.get(filename.rsplit('.', 1)[1])
-
-def strip_root(filename):
-    if len(filename) == 0: return ""
-    else: return filename[1:] if filename[0] == '/' else filename
-
-def sort_file_list(files,sort_by="name",sort_order=0):
-    def sort_key(item):
-        if sort_by == 'name': return(item[0])
-        if sort_by == 'size': return(item[1])
-        if sort_by == 'date': return(item[2])
-        return (item[0])
-    if files is not None:
-        files = sorted( files, key=sort_key )
-        if sort_order: files.reverse()
-    return files
-    
-def send_list_directory(file_path,sort_by="name", sort_order=0):
-    dirs  = []
-    files = []
-    abs_path = os.path.abspath(os.path.join(home_dir,file_path))
-    if len(file_path) > 0:
-        if file_path[0] != '/':  file_path = "/" + file_path
-        if file_path[-1] != '/': file_path = file_path + "/"
+def get_path(path):
+    rel_path = "" if not path else strip_root(path)
+    abs_path = os.path.abspath(os.path.join( home_dir, rel_path ))
+    rel_path = abs_path[ len(home_dir)+1: ]
+    if len(rel_path) > 0:
+        if rel_path[0] != '/':  rel_path = "/" + rel_path
+        if rel_path[-1] != '/': rel_path = rel_path + "/"
     else:
-        file_path = "/"
+        rel_path = "/"
+    return rel_path, abs_path
+
+def sort_dir_list( items, sort_by="name", sort_order=0 ):
+    def sort_key_num_str(strItem):
+        import re
+        strList = re.split('(\d+)',strItem)
+        strList = [x for x in strList if len(x) > 0]
+        newList = []
+        for s in strList:
+            try: newList.append(int(s))
+            except: newList.append(s)            
+        return newList
+    def sort_key(item):
+        str_num_key = item.name if item.isdir else sort_key_num_str(item.name)
+        if sort_order: #reverse
+            if sort_by == 'name': return((item.isdir, str_num_key))
+            if sort_by == 'size': return((item.isdir, item.size))
+            if sort_by == 'date': return((item.isdir, item.date))
+            return ((item.isdir, sort_key_num_str(item.name)))
+        else:
+            if sort_by == 'name': return((1-item.isdir, str_num_key))
+            if sort_by == 'size': return((1-item.isdir, item.size))
+            if sort_by == 'date': return((1-item.isdir, item.date))
+            return ((1-item.isdir, sort_key_num_str(item.name)))
+    if items:
+        items = sorted( items, key=sort_key )
+        if sort_order: items.reverse()
+    return items
+    
+def get_dir_list( rel_path, abs_path, sort_by="name", sort_order=0 ):
+    items = []
+    count = [0,0]
     for f in os.listdir( abs_path ):
         full_name = os.path.join( abs_path, f )
         size = os.path.getsize( full_name )
         date = time.strftime( "%Y-%m-%d %H:%M:%S", time.localtime(os.path.getctime( full_name )))
-        if os.path.isdir(full_name): dirs.append( (f, size, date) )
-        else: files.append( (f, size, date) )
-    if dirs and len(dirs) > 1: dirs  = sort_file_list(dirs, sort_by, sort_order)
-    if files and len(files) > 1: files = sort_file_list(files, sort_by, sort_order)
-    if file_path != "/": dirs.insert( 0, ("..", 0, "") ) 
-    if session['admin']:
-        return render_template("browser.html", folder=file_path, dirs=dirs, files=files, sort_order=sort_order)
-    else:
-        return render_template("download.html", folder=file_path, dirs=dirs, files=files, sort_order=sort_order)
+        item = type("", (), {})()
+        item.isdir = 1 if os.path.isdir(full_name) else 0
+        item.name  = f
+        item.size  = size        
+        item.date  = date        
+        items.append( item )
+        if item.isdir: count[0] += 1 
+        else: count[1] += 1
+    items = sort_dir_list( items, sort_by, sort_order )
+    if rel_path != "/": 
+        item = type("", (), dict( isdir = 1, name = "..", size = 0, date = "") )()
+        items.insert( 0, item ) 
+    return items, count
 
+def ItemList( all_items, num_items, curr_page ):
+    return all_items[ curr_page*num_items : (curr_page+1)*num_items ]
+
+def PageList( num_pages, num_items, curr_page, total_items ):
+    start_page = int(curr_page / num_pages) * num_pages
+    max_page   = int(total_items / num_items) + ( 1 if total_items % num_items != 0 else 0 )
+    last_page  = start_page + num_pages 
+    if last_page > max_page: last_page = max_page
+    page = type("", (), {})()
+    page.pages = [ p for p in range(start_page+1,last_page+1) ]
+    page.curr_page = curr_page + 1
+    page.prev_page = start_page if start_page > 1 else 1
+    page.next_page = last_page + 1 if last_page < max_page else max_page
+    page.last_page = max_page + 1
+    return page
+
+def get_flat_list( abs_path, sort_by="name", sort_order=0 ):
+    items = []
+    count = [0,0]
+    for f in os.listdir( abs_path ):
+        full_name = os.path.join( abs_path, f )
+        size = os.path.getsize( full_name )
+        date = time.strftime( "%Y-%m-%d %H:%M:%S", time.localtime(os.path.getctime( full_name )))
+        if os.path.isdir(full_name):
+            items.extend(get_flat_list( full_name, sort_by, sort_order ))
+        else:
+            item = type("", (), {})()
+            item.isdir = 0
+            item.name  = full_name[ len(home_dir)+1: ]
+            item.size  = size        
+            item.date  = date        
+            items.append( item )
+            if item.isdir: count[0] += 1 
+            else: count[1] += 1
+    items = sort_dir_list( items, sort_by, sort_order )
+    return items, counts
+    
+def get_page_list(rel_path, abs_path, sort_by, sort_order, curr_page, num_pages, num_items):
+    all_items, counts = get_dir_list(rel_path, abs_path, sort_by, sort_order)
+    items = ItemList( all_items, num_items, curr_page-1 )
+    pages = PageList( num_pages, num_items, curr_page-1, len(all_items) )
+    return items, pages, counts
+    
+def get_list(rel_path, abs_path, sort_by, sort_order):
+    all_items, counts = get_dir_list(rel_path, abs_path, sort_by, sort_order)
+    return all_items, counts
+
+def send_file_content(abs_path):
+    import mimetype
+    mime_type = mimetype.get_mime_type(abs_path)
+    file_name = os.path.basename(abs_path)
+    #return send_file(abs_path, as_attachment=True)
+    if mime_type: 
+        return send_file(abs_path, mimetype=mime_type)
+    else: 
+        return send_file(abs_path, attachment_filename=file_name, as_attachment=True)
+
+def send_dir_content(*args, **kwargs):
+    return render_template(*args, **kwargs)   
+#
+# url
+#
 
 @app.route('/', methods=['GET'])
 def home():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    else:
-        return send_list_directory("")
+    return redirect(url_for('list'))
 
-@app.route('/user', methods=['GET'])
-def user():
-    if not session.get('logged_in'):
-        return render_template('login.html')
+@app.route('/list', methods=['GET'])
+def list():
+    prepare_request_process()
+    view_mode  = request.args.get('view_mode', session.get('view_mode'))
+    curr_page  = request.args.get('page', 1, type=int)
+    file_path  = request.args.get('path', "")
+    sort_by    = request.args.get('sort_by',"name")
+    sort_order = request.args.get('sort_order',0,type=int)
+    
+    if not session.get('view_mode'): session['view_mode'] = 'page'
+    if view_mode: session['view_mode'] = view_mode
+    session['sort_by'   ] = sort_by
+    session['sort_order'] = sort_order
+    
+    print('list()', 'view_mode', view_mode, curr_page)
+    
+    sort = type("",(),dict(by=sort_by, order=sort_order))
+    rel_path, abs_path = get_path(file_path)
+    if os.path.isfile(abs_path):
+        return send_file_content(abs_path)
     else:
-        if session['admin']:
-            users = User.query.all() 
-            return render_template('user.html', users=users)
-        else: return redirect(url_for('home'))
-
-@app.route('/download', methods=['GET'])
-def download():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    else:
-        filePath = request.args.get('path')
-        filePath = "" if filePath is None else strip_root(filePath)
-        fullPath = os.path.abspath(os.path.join( home_dir, filePath ))
-        print( 'download()', fullPath, home_dir, filePath )
-        filePath = fullPath[ len(home_dir)+1: ]
-        if os.path.isdir(fullPath):
-            sort_by    = request.args.get('sort_by')
-            sort_order = request.args.get('sort_order')
-            sort_order = 0 if sort_order is None else 1 - int(sort_order)
-            return send_list_directory(filePath, sort_by, sort_order )
+        if not os.path.isdir(abs_path):
+            rel_path, abs_path = get_path("")
+        if view_mode == 'page':
+            items, pages, counts = get_page_list(rel_path, abs_path, sort_by, sort_order, curr_page, page_show_num, page_show_item)
+            return send_dir_content('list.html', folder=rel_path, sort=sort, items=items, pages=pages, counts=counts)    
         else:
-            mime_type = get_mime_type(fullPath)
-            if mime_type:
-                return send_file(fullPath, mimetype=mime_type)
+            if view_mode == 'flat':
+                items, counts = get_flat_list(abs_path, sort_by, sort_order)
             else:
-                return send_file(fullPath, as_attachment=True)
+                items, counts = get_list(rel_path, abs_path, sort_by, sort_order)
+            return send_dir_content('list.html', folder=rel_path, sort=sort, items=items, pages=None, counts=counts)
 
 @app.route('/upload', methods=['POST'])
-def Upload():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    file = request.files['file']
-    folder = strip_root(request.form['folder'])
-    if file: # and allowed_file(file.filename):
-        file.save(os.path.join( home_dir, folder, file.filename))
-    return send_list_directory(folder)
-
+def upload():
+    prepare_request_process()
+    if session.get('logged_in'):
+        file = request.files['file']
+        folder = strip_root(request.form['folder'])
+        if file:
+            file.save(os.path.join( home_dir, folder, file.filename))
+    return redirect(url_for('list', path=folder))
+    
 @app.route('/create', methods=['POST'])
-def Create():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    new_folder = strip_root(request.form['new_folder'])
-    folder = strip_root(request.form['folder'])
-    full_path = os.path.join( home_dir, folder, new_folder )
-    print('create()', full_path )
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
-    return send_list_directory(folder)
+def create():
+    prepare_request_process()
+    if session.get('logged_in'):
+        new_folder = strip_root(request.form['new_folder'])
+        folder = strip_root(request.form['folder'])
+        full_path = os.path.join( home_dir, folder, new_folder )
+        if not os.path.exists(full_path):
+            os.makedirs(full_path)
+    return redirect(url_for('list', path=folder))
 
 @app.route('/delete', methods=['GET'])
-def Delete():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    file = strip_root(request.args['file'])
-    folder = strip_root(os.path.dirname(file))
-    full_path = os.path.join( home_dir, file)
-    if os.path.isdir(full_path):
-        if len(os.listdir(full_path)) == 0:
-            os.rmdir(full_path)
-    elif os.path.isfile(full_path):
-        os.remove(full_path)
-    else:
-        print(f"permission error : delete {full_path}")
-    return send_list_directory(folder)
-
-@app.route('/image/<image>', methods=['GET'])
-def File(image):
-    full_path = os.path.join(app.instance_path, 'image', image)
-    return send_file(full_path)
-
+def delete():
+    prepare_request_process()
+    if session.get('logged_in'):
+        file = strip_root(request.args['file'])
+        folder = strip_root(os.path.dirname(file))
+        full_path = os.path.join( home_dir, file)
+        if os.path.isdir(full_path):
+            if len(os.listdir(full_path)) == 0:
+                os.rmdir(full_path)
+        elif os.path.isfile(full_path):
+            os.remove(full_path)
+        else:
+            print(f"permission error : delete {full_path}")
+    return redirect(url_for('list', path=folder))
 
 #
-# SESSION
+# Login
 #
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True)
-    password = db.Column(db.String(80))
-    admin = db.Column(db.Integer)
-    def __init__(self, username, password, admin):
-        self.username = username
-        self.password = password
-        self.admin    = admin
-
-def create_user(username,password,admin=0):
-    new_user = User(username=username, password=password, admin=admin)
-    db.session.add(new_user)
-    db.session.commit()
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if session.get('logged_in') and session.get('admin'):
+        if request.method == 'GET':
+            return render_template('register.html')
+        username = request.form['username']
+        password = request.form['password']
+        if request.form.get('admin'): 
+            admin = request.form['admin']
+            print( admin, request.form['admin'], type(admin) )
+        else: admin = 0
+        sql.create_user(username,password,admin)
+    return redirect(url_for('home'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -215,94 +247,44 @@ def login():
             return render_template('login.html')
         username = request.form['username']
         password = request.form['password']
-        print( '/login', username, password )
-        try:
-            data = User.query.filter_by(username=username, password=password).first()
-            if data is not None:
-                session['logged_in'] = True
-                session['username'] = username
-                session['admin'] = data.admin
-                return redirect(url_for('home'))
-            else:
-                return render_template('login.html', message="Login Fail [1] !")
-        except:
-            return  render_template('login.html', message="Login Fail [2] !")
-    else:
-        return redirect(url_for('home'))
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if not session.get('logged_in'):
-        return render_template('login.html')
-    if not session.get('admin'):
-        return render_template('login.html') 
-    if request.method == 'POST':
-        admin = 1 if request.form.get("admin") else 0
-        new_user = User(username=request.form['username'], password=request.form['password'], admin=admin)
-        db.session.add(new_user)
-        db.session.commit()
-        return render_template('login.html')
-    return render_template('register.html')
+        admin = sql.query( username, password )
+        if admin is not None:
+            session['logged_in'] = True
+            session['username'] = username
+            session['admin'] = admin
+    return redirect(url_for('home'))
 
 @app.route("/logout")
 def logout():
     session['logged_in'] = False
+    session['username'] = None
+    session['admin'] = None
     return redirect(url_for('home'))
 
-#
-# Pagination
-#
-
-
-class Item():
-    def __init__(self,i):
-        self.name = "black" + str(i)
-        self.created_at = str(i*1000)
-
-class Pages():
-    def __init__(self):
-        pass
-        
-class Items():
-    def __init__(self,num_items):
-        self.items = [ Item(i) for i in range(num_items) ]
-        self.num_items = num_items
-    def get_items(self,page,num_items,num_pages):
-        page = page - 1
-        start_page = int(page / num_pages) * num_pages
-        last_page  = start_page + num_pages
-        max_page   = int(self.num_items / num_items) + ( 1 if self.num_items % num_items != 0 else 0 )
-        #print( 'get_items()', start_page, last_page, max_page )
-        if last_page > max_page: last_page = max_page
-        items = self.items[ page*num_items : (page+1)*num_items ]
-        pages = Pages()
-        pages.pages = [ p for p in range(start_page+1,last_page+1) ]
-        pages.curr_page = page + 1
-        pages.prev_page = start_page if start_page > 1 else 1
-        pages.next_page = last_page + 1 if last_page < max_page else max_page
-        pages.last_page = max_page + 1
-        return items, pages
-        
-
-list_items = Items(94)
-
-@app.route('/pagination')
-def pagination():
-    global list_items
-    page = request.args.get('page', 1, type=int)
-    items, pages = list_items.get_items(page,10,5)
-    return render_template('pagination.html', items=items, pages=pages)
-
 
 #
-# Application
+# static files
+#
+
+@app.route('/css/<file>', methods=['GET'])
+def file_css(file):
+    full_path = os.path.join(app.instance_path, 'css', file)
+    return send_file(full_path)
+
+@app.route('/js/<file>', methods=['GET'])
+def file_js(file):
+    full_path = os.path.join(app.instance_path, 'js', file)
+    return send_file(full_path)
+
+@app.route('/image/<file>', methods=['GET'])
+def file_image(file):
+    full_path = os.path.join(app.instance_path, 'image', file)
+    return send_file(full_path)
+
+#
+# app
 #
 
 if __name__ == '__main__':
-    #app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024    
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///user.db'
-    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30) 
     app.config["SECRET_KEY"] = "abcd" #app.secret_key = "3123"
-    db.create_all()
-    nav.init_app(app)
-    app.run(debug=True, host="0.0.0.0", port=8000) #, ssl_context='adhoc')
+    app.run(debug=False, host="0.0.0.0", port=8001) 
