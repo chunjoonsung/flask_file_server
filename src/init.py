@@ -26,7 +26,8 @@ CREATE TABLE "user" (
 if __name__ == "__main__":
     sql = Sqlite("user.db")
     sql.execute(user_table)
-    sql.execute("INSERT INTO user (username, password, admin) VALUES ('user','user1234','0')")
+    sql.execute("INSERT INTO user (username, password, admin) VALUES ('psgam','psgam72','0')")
+    sql.execute("INSERT INTO user (username, password, admin) VALUES ('pub','user1234','0')")
     sql.execute("INSERT INTO user (username, password, admin) VALUES ('admin','nimda4321','1')")
     sql.commit()
     rows = sql.select(f"SELECT username, password FROM user")

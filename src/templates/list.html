@@ -1,0 +1,93 @@
+
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="panel panel-primary" style="margin: 25px 25px 25px 25px;">
+  <div class="panel-heading">
+    <table><tr class="panel-heading">
+    <td class="panel-heading" style="color: white;" >Directory [ {{counts[0]}} / {{counts[1]}} ] : {{folder}}</td>
+    <td class="panel-heading" width="1%">&nbsp;</td>
+    <td class="panel-heading" style="text-align: right; color: white; margin: 0px 25px 0px 0px;">
+    {% if session['username'] %} 
+        [ {{session['username']}} ] {% endif %}
+    </td></tr></table>
+  </div>
+  {% if session['logged_in'] %}
+  <p>&nbsp;</p>
+  <div style="margin: 0px 25px 0px 25px;">
+  <table class="table table-bordered" border='0'>
+      <form action = "/upload" method = "POST" enctype = "multipart/form-data">
+      <tr>
+      <td class="shrink"><b>Upload</b></td>
+      <td class="shrink"><input type = "file" name = "file" style="width: 100%;"/>
+      <input type = "hidden" name = "folder" value="{{folder}}" /></td>
+      <td class="shrink"><input type = "submit"/></td>
+      </tr>
+      </form> 
+      <form action = "/create" method = "POST" enctype = "multipart/form-data">
+      <tr>
+      <td class="shrink"><b>Create Folder</b></td>
+      <td class="shrink"><input type = "text" name = "new_folder"  style='width: 100%;'/>
+      <input type = "hidden" name = "folder" value="{{folder}}"/></td>
+      <td class="shrink"><input type = "submit" /></td>
+      </tr>
+      </form> 
+  </table></div>
+  {% endif %}
+
+  
+  {% if session['view_mode'] == 'page' %}
+  <div style="display: flex; justify-content: flex-end; margin: 0px 25px 0px 0px;"> 
+    <nav>
+      <ul class="pagination">
+        <li><a href="{{ url_for('list', path=folder, page=pages.prev_page, sort_by=sort.by, sort_order=sort.order) }}" aria-label="Previous">
+            <span aria-hidden="true">&laquo;</span>
+        </a></li>
+        {% for page_num in pages.pages %}
+        <li><a href="{{ url_for('list', path=folder, page=page_num, sort_by=sort.by, sort_order=sort.order) }}"> {{ page_num }} </a></li>
+        {% endfor %}        
+        <li><a href="{{ url_for('list', path=folder, page=pages.next_page, sort_by=sort.by, sort_order=sort.order) }}" aria-label="Next">
+            <span aria-hidden="true">&raquo;</span>
+        </a></li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+  
+  <div style="margin: 0px 25px 0px 25px;">
+    <table class="table table-bordered table-striped" border='0'>
+        <thead><tr class="info">
+            <th style="text-align: center;">
+                <a href="/list?path={{folder}}&sort_by=name&sort_by=&sort_order={{1-sort.order}}">filename</a></th>
+            <th style="text-align: center;" width="1%">
+                <a href="/list?path={{folder}}&sort_by=size&sort_order={{1-sort.order}}">size</a></th>
+            <th style="text-align: center;" width="1%">
+                <a href="/list?path={{folder}}&sort_by=date&sort_order={{1-sort.order}}">date</a></th>
+            {% if session['admin'] == 1 %}
+            <th style="text-align: center;""> command </th>
+            {% endif %}
+        </tr>
+        </thead>
+        <tbody>
+        {% if items %}
+            {% for item in items %}
+            <tr>
+                <td class="shrink">
+                    {% if item.isdir %}<img src="/image/folder.png" width=16 height=16 />
+                    {% else %}<img src="/image/file.png" width=16 height=16 />
+                    {% endif %}
+                    <a href="/list?path={{folder}}{{item.name}}&sort_by={{sort.by}}&sort_order={{sort.order}}">{{ item.name }}</a></td>
+                <td class="shrink" style="text-align: right;">{{ item.size }}</td>
+                <td class="shrink" style="text-align: center;">&nbsp;</td>
+                {% if session['admin'] == 1 %}
+                <td class="shrink" style="text-align: center;"> 
+                <a href="/delete?file={{folder}}{{ item.name }}">delete</a></td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        {% endif %}
+        </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
